@@ -65,28 +65,17 @@ export async function onRequestPost(context) {
         };
 
         const apiResponse = await fetch("http://47.108.147.164:5001/health", {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(apiRequestBody),
+            method: 'GET'
         });
 
-        if (apiResponse.ok) {
-            // 你可以根据需要检查 apiResponse.json() 的内容
-            // const apiResponseData = await apiResponse.json(); (如果外部API返回JSON)
-            return new Response(JSON.stringify({ success: true, message: '消息已成功发送！' }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        } else {
-            const errorText = await apiResponse.text();
-            console.error(`Error calling external API (${apiResponse.status}): ${errorText}`);
-            return new Response(JSON.stringify({ success: false, message: `提交到目标服务` + EXTERNAL_API_ENDPOINT + `失败 (状态: ${apiResponse.status})。` }), {
-                status: 502, // Bad Gateway
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
+        if (!healthResponse.ok) {
+    const errorText = await healthResponse.text();
+    console.error(`Health check failed (${healthResponse.status}): ${errorText}`);
+    return new Response(JSON.stringify({ success: false, message: '目标服务不可用。' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+    });
+}
 
     } catch (error) {
         console.error('Error processing request:', error);
