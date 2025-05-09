@@ -82,7 +82,7 @@ export async function onRequestPost(context) {
         } else {
             const errorText = await apiResponse.text();
             console.error(`Error calling external API (${apiResponse.status}): ${errorText}`);
-            return new Response(JSON.stringify({ success: false, message: `提交到目标服务失败 (状态: ${apiResponse.status})。` }), {
+            return new Response(JSON.stringify({ success: false, message: `提交到目标服务` + EXTERNAL_API_ENDPOINT + `失败 (状态: ${apiResponse.status})。` }), {
                 status: 502, // Bad Gateway
                 headers: { 'Content-Type': 'application/json' },
             });
