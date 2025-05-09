@@ -4,29 +4,29 @@ export async function onRequestGet(context) {
     try {
         const { request, env } = context;
 
-        // 1. API Key 认证
-        const GET_API_KEY = env.GET_MESSAGE_API_KEY;
-        if (!GET_API_KEY) {
-            console.error("GET_MESSAGE_API_KEY is not set in environment variables.");
-            return new Response(JSON.stringify({ success: false, message: '服务器端 API Key 未配置。' }), {
-                status: 500, // Internal Server Error
+        // 1. API Key 验证
+        const GET_MESSAGES_API_KEY = env.GET_MESSAGES_API_KEY;
+        if (!GET_MESSAGES_API_KEY) {
+            console.error("GET_MESSAGES_API_KEY is not set in environment variables.");
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法验证请求 (K_ENV)。' }), {
+                status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
         const url = new URL(request.url);
-        const clientApiKey = url.searchParams.get('apiKey');
+        const apiKeyFromRequest = url.searchParams.get('key'); // 从查询参数获取 key
 
-        if (!clientApiKey) {
-            return new Response(JSON.stringify({ success: false, message: '未提供 API Key。' }), {
-                status: 401, // Unauthorized
+        if (!apiKeyFromRequest) {
+            return new Response(JSON.stringify({ success: false, message: '请求缺少 API Key。' }), {
+                status: 400, // Bad Request
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        if (clientApiKey !== GET_API_KEY) {
+        if (apiKeyFromRequest !== GET_MESSAGES_API_KEY) {
             return new Response(JSON.stringify({ success: false, message: '无效的 API Key。' }), {
-                status: 403, // Forbidden
+                status: 401, // Unauthorized
                 headers: { 'Content-Type': 'application/json' },
             });
         }
@@ -34,46 +34,48 @@ export async function onRequestGet(context) {
         // 2. 检查 KV Namespace 是否已绑定
         if (!env.MESSAGES_KV) {
             console.error("MESSAGES_KV namespace is not bound.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (KV_BIND)。' }), {
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法获取消息 (KV_BIND)。' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 3. 使用 list({ limit: 1 }) 获取 KV 中的一个 key
-        // 这将显著减少 list 操作的成本，因为它只读取一个 key 的元数据。
-        const listResult = await env.MESSAGES_KV.list({ limit: 1 });
+        // 3. 列出 KV 中的所有 key
+        const listResult = await env.MESSAGES_KV.list();
+        const keys = listResult.keys;
 
-        if (!listResult.keys || listResult.keys.length === 0) {
+        if (!keys || keys.length === 0) {
             return new Response(JSON.stringify({ success: true, message: '当前没有可用的消息。', data: null }), {
-                status: 200, // 或 404, 根据你的偏好
+                status: 200,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        const keyToFetch = listResult.keys[0].name; // 获取列表中的第一个 key 的名字
+        // 4. 随机选择一个 key
+        const randomIndex = Math.floor(Math.random() * keys.length);
+        const randomKeyInfo = keys[randomIndex];
+        const keyNameToProcess = randomKeyInfo.name;
 
-        // 4. 根据 key 获取其 value
-        const messageString = await env.MESSAGES_KV.get(keyToFetch);
+        // 5. 根据随机选中的 key 的 name 获取其 value
+        const messageString = await env.MESSAGES_KV.get(keyNameToProcess);
 
         if (messageString === null) {
-            // 理论上，如果 list 返回了 key，get 不应该为 null，除非在极短时间内 key 被其他进程删除
-            console.warn(`Value for key '${keyToFetch}' was null after listing. It might have been deleted concurrently.`);
-            // 即使发生这种情况，我们也可以尝试再次 list，或者直接返回没有消息
-            // 为简单起见，这里我们当作没有消息处理，或者可以尝试删除这个无效的key（如果确定它不该存在）
-            await env.MESSAGES_KV.delete(keyToFetch); // 尝试清理
-            return new Response(JSON.stringify({ success: true, message: '未能获取到消息内容，可能已被处理。请重试。', data: null }), {
-                status: 200, // 或者特定的错误码
+            // 这种情况可能发生在并发删除或者 key 列表与实际存储不一致的罕见情况
+            console.warn(`Value for key '${keyNameToProcess}' was null, attempting to delete if it still exists and trying again or reporting.`);
+            // 尝试删除，即使它是 null，以防万一
+            await env.MESSAGES_KV.delete(keyNameToProcess);
+            return new Response(JSON.stringify({ success: false, message: '无法检索到随机选择的消息内容，可能已被处理。请重试。' }), {
+                status: 404, // Not Found or could be 500 if considered an inconsistency
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 5. 将获取到的 JSON 字符串转换回对象
-        const messageObject = JSON.parse(messageString);
+        // 6. 从 KV 中删除该消息
+        // 确保在返回给客户端之前删除，以实现“获取后即移除”
+        await env.MESSAGES_KV.delete(keyNameToProcess);
 
-        // 6. 从 KV 中删除该消息 (重要：确保在返回给客户端之前或之后可靠地删除)
-        // 最好在确认消息可以被处理后再删除
-        await env.MESSAGES_KV.delete(keyToFetch);
+        // 7. 将获取到的 JSON 字符串转换回对象
+        const messageObject = JSON.parse(messageString); // 假设 messageString 一定是有效的 JSON
 
         return new Response(JSON.stringify({ success: true, data: messageObject }), {
             status: 200,
@@ -82,21 +84,26 @@ export async function onRequestGet(context) {
 
     } catch (error) {
         console.error('Error processing GET request for random message:', error);
-        // 避免暴露详细错误给客户端
-        let publicErrorMessage = '获取消息时发生内部错误。';
+        let errorMessage = '获取消息时发生内部错误。';
+        let errorStatus = 500;
+
         if (error instanceof SyntaxError && error.message.includes("JSON")) {
-             publicErrorMessage = '消息数据格式错误。';
+            errorMessage = '存储的数据格式无效。'; // 如果JSON.parse失败
         }
-        return new Response(JSON.stringify({ success: false, message: publicErrorMessage }), {
-            status: 500,
+        // 你可以根据 error.name 或 error.message 来细化错误处理
+
+        return new Response(JSON.stringify({ success: false, message: errorMessage }), {
+            status: errorStatus,
             headers: { 'Content-Type': 'application/json' },
         });
     }
 }
 
+// 其他 HTTP 方法的处理保持不变
 export async function onRequestPost(context) {
-    return new Response("此接口用于获取消息 (GET)，并需要有效的 apiKey。提交消息请使用 POST /api/submit。", {
-        status: 405,
-        headers: { 'Allow': 'GET', 'Content-Type': 'application/json' }
+    return new Response("此接口用于获取消息 (GET)，提交消息请使用 POST /api/submit。", {
+        status: 405, // Method Not Allowed
+        headers: { 'Allow': 'GET' }
     });
 }
+// ... 其他方法 (PUT, DELETE, etc.)
