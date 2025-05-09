@@ -1,138 +1,70 @@
-// Cloudflare Pages Functions 使用这种导出方式
-// POST /api/submit
-export async function onRequestPost(context) {
+// functions/api/message.js
+
+export async function onRequestGet(context) {
     try {
-        const { request, env } = context; // env 用于访问环境变量
-        const body = await request.json();
+        const { env } = context;
 
-        const message = body.message; // 原始消息仍然从请求中获取
-        const token = body['cf-turnstile-response']; // 从前端获取的 Turnstile token
-        const ip = request.headers.get('CF-Connecting-IP'); // 获取用户 IP
-
-        // 1. 验证 Turnstile Token
-        const TURNSTILE_SECRET_KEY = env.TURNSTILE_SECRET_KEY;
-        if (!TURNSTILE_SECRET_KEY) {
-            console.error("TURNSTILE_SECRET_KEY is not set in environment variables.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法验证请求。' }), {
+        // 检查 KV Namespace 是否已绑定
+        if (!env.MESSAGES_KV) {
+            console.error("MESSAGES_KV namespace is not bound.");
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法获取消息 (KV_BIND)。' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        let formData = new FormData();
-        formData.append('secret', TURNSTILE_SECRET_KEY);
-        formData.append('response', token);
-        formData.append('remoteip', ip);
+        // 列出 KV 中的所有 key
+        // 注意：对于非常大量的 key，list() 操作可能会有性能影响或限制。
+        // Cloudflare KV list操作一次最多返回1000个key，如果需要更多，需要分页处理。
+        // 对于“随机一条”，如果key数量不多，这种方式可行。
+        const listResult = await env.MESSAGES_KV.list();
+        const keys = listResult.keys;
 
-        const turnstileUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-        const turnstileResult = await fetch(turnstileUrl, {
-            body: formData,
-            method: 'POST',
-        });
-
-        const turnstileOutcome = await turnstileResult.json();
-
-        if (!turnstileOutcome.success) {
-            console.log('Turnstile verification failed:', turnstileOutcome);
-            return new Response(JSON.stringify({ success: false, message: '人机验证失败，请重试。' }), {
-                status: 403, // Forbidden
+        if (!keys || keys.length === 0) {
+            return new Response(JSON.stringify({ success: true, message: '当前没有可用的消息。', data: null }), {
+                status: 200, // 或者 404 Not Found，取决于你希望如何表示空状态
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 2. Turnstile 验证通过。
-        // 原始消息内容检查仍然保留，即使它不直接发送到 /hello 接口
-        if (!message || typeof message !== 'string') {
-            return new Response(JSON.stringify({ success: false, message: '消息内容不能为空。' }), {
-                status: 400,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
+        // 随机选择一个 key
+        const randomIndex = Math.floor(Math.random() * keys.length);
+        const randomKeyInfo = keys[randomIndex];
 
-        // 即使我们调用 /hello，也保留这些变量的定义，以防将来需要
-        // 或者如果您希望基于 message 做一些其他操作。
-        // const title = message.substring(0, 60);
-        // const content = message;
+        // 根据随机选中的 key 的 name 获取其 value
+        const messageString = await env.MESSAGES_KV.get(randomKeyInfo.name);
 
-        // 获取 Python 代理服务 /hello 接口的 URL
-        // 你需要在 Cloudflare Pages 项目的设置 -> 环境变量中添加 PROXY_HELLO_URL
-        // 例如 PROXY_HELLO_URL = "http://your-python-proxy-domain.com:5005/hello"
-        const PROXY_HELLO_URL = env.PROXY_HELLO_URL;
-
-        if (!PROXY_HELLO_URL) {
-            console.error("PROXY_HELLO_URL is not set in environment variables.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，目标接口地址未设置。' }), {
+        if (messageString === null) {
+            // 这种情况理论上不应该发生，如果 key 存在于列表中但无法获取
+            console.error(`Could not retrieve value for key: ${randomKeyInfo.name}`);
+            return new Response(JSON.stringify({ success: false, message: '无法检索到随机选择的消息内容。' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        console.warn('=== 调用 Python 代理 /hello 接口 ===');
-        console.warn('URL:', PROXY_HELLO_URL);
+        // 将获取到的 JSON 字符串转换回对象
+        const messageObject = JSON.parse(messageString);
 
-        // 调用 /hello 接口 (GET 请求，不需要 body 或特定头部)
-        const proxyApiResponse = await fetch(PROXY_HELLO_URL, {
-            method: 'GET', // /hello 接口是 GET 请求
-            headers: {
-                // 通常 /hello 接口不需要特定的认证头部，除非你的代理有额外设置
-                // 'Accept': 'application/json', // 可以明确期望 JSON 返回
-            }
+        return new Response(JSON.stringify({ success: true, data: messageObject }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
         });
-
-        console.warn('=== Python 代理 /hello 接口响应 ===');
-        console.warn('Status:', proxyApiResponse.status);
-        console.warn('Status Text:', proxyApiResponse.statusText);
-        // console.warn('Headers:', Object.fromEntries(proxyApiResponse.headers.entries())); // 可选：打印响应头
-
-        if (proxyApiResponse.ok) {
-            const proxyResponseData = await proxyApiResponse.json(); // /hello 应该返回 {"message": "hello"}
-            console.log('Response from /hello:', proxyResponseData);
-
-            // 根据 /hello 的响应决定最终的成功消息
-            // 例如，如果 proxyResponseData.message === "hello"，则认为成功
-            if (proxyResponseData && proxyResponseData.message === "hello") {
-                return new Response(JSON.stringify({ success: true, message: '与代理服务通信成功！收到了 "hello"。' }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            } else {
-                console.error('Unexpected response from /hello:', proxyResponseData);
-                return new Response(JSON.stringify({ success: false, message: '代理服务返回了意外的响应。' }), {
-                    status: 502, // Bad Gateway, or a more specific error if needed
-                    headers: { 'Content-Type': 'application/json' },
-                });
-            }
-        } else {
-            const errorText = await proxyApiResponse.text();
-            console.error(`Error calling proxy /hello API (${proxyApiResponse.status}): ${errorText}`);
-            return new Response(JSON.stringify({ success: false, message: `调用代理服务 ${PROXY_HELLO_URL} 失败 (状态: ${proxyApiResponse.status})。` }), {
-                status: 502, // Bad Gateway
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
 
     } catch (error) {
-        console.error('Error processing request:', error);
-        // 检查错误类型，如果是 fetch 导致的 TypeError (例如网络问题或 DNS 问题)
-        if (error instanceof TypeError && error.message.includes('fetch')) {
-             return new Response(JSON.stringify({ success: false, message: '网络错误，无法连接到目标服务。' }), {
-                status: 503, // Service Unavailable or 504 Gateway Timeout
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
-        return new Response(JSON.stringify({ success: false, message: '处理请求时发生内部错误。' }), {
+        console.error('Error processing GET request for random message:', error);
+        return new Response(JSON.stringify({ success: false, message: '获取消息时发生内部错误。' }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
         });
     }
 }
 
-// Cloudflare Pages Functions 也支持其他 HTTP 方法，如果需要的话
-// onRequestGet 保持不变，或者您可以根据需要调整它
-export async function onRequestGet(context) {
-    // 可以返回一个简单的信息，或者这个函数提供的 API 描述
-    return new Response(JSON.stringify({ info: "API endpoint. Use POST to submit data after Turnstile verification. The POST request now internally calls a /hello service." }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
+// 如果 /api/message 路径只支持 GET，其他方法可以返回 405
+export async function onRequestPost(context) {
+    return new Response("此接口用于获取消息 (GET)，提交消息请使用 POST /api/submit。", {
+        status: 405, // Method Not Allowed
+        headers: { 'Allow': 'GET' }
     });
 }
+// ... 可以为其他 HTTP 方法 (PUT, DELETE 等) 添加类似的处理
