@@ -2,49 +2,78 @@
 
 export async function onRequestGet(context) {
     try {
-        const { env } = context;
+        const { request, env } = context;
 
-        // 检查 KV Namespace 是否已绑定
+        // 1. API Key 认证
+        const GET_API_KEY = env.GET_MESSAGE_API_KEY;
+        if (!GET_API_KEY) {
+            console.error("GET_MESSAGE_API_KEY is not set in environment variables.");
+            return new Response(JSON.stringify({ success: false, message: '服务器端 API Key 未配置。' }), {
+                status: 500, // Internal Server Error
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        const url = new URL(request.url);
+        const clientApiKey = url.searchParams.get('apiKey');
+
+        if (!clientApiKey) {
+            return new Response(JSON.stringify({ success: false, message: '未提供 API Key。' }), {
+                status: 401, // Unauthorized
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (clientApiKey !== GET_API_KEY) {
+            return new Response(JSON.stringify({ success: false, message: '无效的 API Key。' }), {
+                status: 403, // Forbidden
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        // 2. 检查 KV Namespace 是否已绑定
         if (!env.MESSAGES_KV) {
             console.error("MESSAGES_KV namespace is not bound.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法获取消息 (KV_BIND)。' }), {
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (KV_BIND)。' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 列出 KV 中的所有 key
-        // 注意：对于非常大量的 key，list() 操作可能会有性能影响或限制。
-        // Cloudflare KV list操作一次最多返回1000个key，如果需要更多，需要分页处理。
-        // 对于“随机一条”，如果key数量不多，这种方式可行。
-        const listResult = await env.MESSAGES_KV.list();
-        const keys = listResult.keys;
+        // 3. 使用 list({ limit: 1 }) 获取 KV 中的一个 key
+        // 这将显著减少 list 操作的成本，因为它只读取一个 key 的元数据。
+        const listResult = await env.MESSAGES_KV.list({ limit: 1 });
 
-        if (!keys || keys.length === 0) {
+        if (!listResult.keys || listResult.keys.length === 0) {
             return new Response(JSON.stringify({ success: true, message: '当前没有可用的消息。', data: null }), {
-                status: 200, // 或者 404 Not Found，取决于你希望如何表示空状态
+                status: 200, // 或 404, 根据你的偏好
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 随机选择一个 key
-        const randomIndex = Math.floor(Math.random() * keys.length);
-        const randomKeyInfo = keys[randomIndex];
+        const keyToFetch = listResult.keys[0].name; // 获取列表中的第一个 key 的名字
 
-        // 根据随机选中的 key 的 name 获取其 value
-        const messageString = await env.MESSAGES_KV.get(randomKeyInfo.name);
+        // 4. 根据 key 获取其 value
+        const messageString = await env.MESSAGES_KV.get(keyToFetch);
 
         if (messageString === null) {
-            // 这种情况理论上不应该发生，如果 key 存在于列表中但无法获取
-            console.error(`Could not retrieve value for key: ${randomKeyInfo.name}`);
-            return new Response(JSON.stringify({ success: false, message: '无法检索到随机选择的消息内容。' }), {
-                status: 500,
+            // 理论上，如果 list 返回了 key，get 不应该为 null，除非在极短时间内 key 被其他进程删除
+            console.warn(`Value for key '${keyToFetch}' was null after listing. It might have been deleted concurrently.`);
+            // 即使发生这种情况，我们也可以尝试再次 list，或者直接返回没有消息
+            // 为简单起见，这里我们当作没有消息处理，或者可以尝试删除这个无效的key（如果确定它不该存在）
+            await env.MESSAGES_KV.delete(keyToFetch); // 尝试清理
+            return new Response(JSON.stringify({ success: true, message: '未能获取到消息内容，可能已被处理。请重试。', data: null }), {
+                status: 200, // 或者特定的错误码
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 将获取到的 JSON 字符串转换回对象
+        // 5. 将获取到的 JSON 字符串转换回对象
         const messageObject = JSON.parse(messageString);
+
+        // 6. 从 KV 中删除该消息 (重要：确保在返回给客户端之前或之后可靠地删除)
+        // 最好在确认消息可以被处理后再删除
+        await env.MESSAGES_KV.delete(keyToFetch);
 
         return new Response(JSON.stringify({ success: true, data: messageObject }), {
             status: 200,
@@ -53,18 +82,21 @@ export async function onRequestGet(context) {
 
     } catch (error) {
         console.error('Error processing GET request for random message:', error);
-        return new Response(JSON.stringify({ success: false, message: '获取消息时发生内部错误。' }), {
+        // 避免暴露详细错误给客户端
+        let publicErrorMessage = '获取消息时发生内部错误。';
+        if (error instanceof SyntaxError && error.message.includes("JSON")) {
+             publicErrorMessage = '消息数据格式错误。';
+        }
+        return new Response(JSON.stringify({ success: false, message: publicErrorMessage }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
         });
     }
 }
 
-// 如果 /api/message 路径只支持 GET，其他方法可以返回 405
 export async function onRequestPost(context) {
-    return new Response("此接口用于获取消息 (GET)，提交消息请使用 POST /api/submit。", {
-        status: 405, // Method Not Allowed
-        headers: { 'Allow': 'GET' }
+    return new Response("此接口用于获取消息 (GET)，并需要有效的 apiKey。提交消息请使用 POST /api/submit。", {
+        status: 405,
+        headers: { 'Allow': 'GET', 'Content-Type': 'application/json' }
     });
 }
-// ... 可以为其他 HTTP 方法 (PUT, DELETE 等) 添加类似的处理
