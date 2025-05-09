@@ -1,21 +1,24 @@
-// Cloudflare Pages Functions 使用这种导出方式
-// POST /api/submit
+// functions/api/submit.js
+
+// 用于生成唯一 ID
+function generateUUID() {
+    return crypto.randomUUID();
+}
+
 export async function onRequestPost(context) {
     try {
-        const { request, env } = context; // env 用于访问环境变量
+        const { request, env } = context; // env 用于访问环境变量和 KV Namespace
         const body = await request.json();
 
-        const message = body.message;
-        const token = body['cf-turnstile-response']; // 从前端获取的 Turnstile token
-        const ip = request.headers.get('CF-Connecting-IP'); // 获取用户 IP
+        const messageContent = body.message; // 注意变量名，避免与全局 message 冲突
+        const token = body['cf-turnstile-response'];
+        const ip = request.headers.get('CF-Connecting-IP');
 
         // 1. 验证 Turnstile Token
-        // Cloudflare 会将 Turnstile Secret Key 注入到 env 对象中
-        // 你需要在 Cloudflare Pages 项目的设置 -> 环境变量中添加 TURNSTILE_SECRET_KEY
         const TURNSTILE_SECRET_KEY = env.TURNSTILE_SECRET_KEY;
         if (!TURNSTILE_SECRET_KEY) {
             console.error("TURNSTILE_SECRET_KEY is not set in environment variables.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法验证请求。' }), {
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法验证请求 (T_SK)。' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
@@ -37,78 +40,67 @@ export async function onRequestPost(context) {
         if (!turnstileOutcome.success) {
             console.log('Turnstile verification failed:', turnstileOutcome);
             return new Response(JSON.stringify({ success: false, message: '人机验证失败，请重试。' }), {
-                status: 403, // Forbidden
+                status: 403,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        // 2. Turnstile 验证通过，准备并发送到你的目标 API
-        if (!message || typeof message !== 'string') {
+        // 2. Turnstile 验证通过，准备数据存入 KV
+        if (!messageContent || typeof messageContent !== 'string') {
             return new Response(JSON.stringify({ success: false, message: '消息内容不能为空。' }), {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
-        const title = message.substring(0, 60);
-        const content = message;
-
-        // 从环境变量获取 API Key 和 Endpoint，更安全
-        const EXTERNAL_API_KEY = env.EXTERNAL_API_KEY || "sUpErS3cr3tK3y!"; // 从环境变量读取，或使用默认值 (不推荐硬编码)
-        const EXTERNAL_API_ENDPOINT = env.EXTERNAL_API_ENDPOINT || "http://47.108.147.164:5001/send"; // 从环境变量读取
-
-        const targetApiUrl = `${EXTERNAL_API_ENDPOINT}?key=${EXTERNAL_API_KEY}`;
-
-        const apiRequestBody = {
-            title: title,
-            content: content,
-        };
-
-        // 打印请求内容
-        console.warn('=== 外部 API 请求内容 ===');
-        console.warn('URL:', targetApiUrl);
-        console.warn('Body:', JSON.stringify(apiRequestBody, null, 2));
-
-        const apiResponse = await fetch(targetApiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(apiRequestBody),
-        });
-
-        // 打印响应内容
-        console.warn('=== 外部 API 响应内容 ===');
-        console.warn('Status:', apiResponse.status);
-        console.warn('Status Text:', apiResponse.statusText);
-        console.warn('Headers:', Object.fromEntries(apiResponse.headers.entries()));
-
-        if (apiResponse.ok) {
-            // 你可以根据需要检查 apiResponse.json() 的内容
-            // const apiResponseData = await apiResponse.json(); (如果外部API返回JSON)
-            return new Response(JSON.stringify({ success: true, message: '消息已成功发送！' }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        } else {
-            const errorText = await apiResponse.text();
-            console.error(`Error calling external API (${apiResponse.status}): ${errorText}`);
-            return new Response(JSON.stringify({ success: false, message: `提交到目标服务：` + EXTERNAL_API_ENDPOINT + `失败 (状态: ${apiResponse.status})。` }), {
-                status: 502, // Bad Gateway
+        // 检查 KV Namespace 是否已绑定
+        if (!env.MESSAGES_KV) {
+            console.error("MESSAGES_KV namespace is not bound.");
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误，无法存储消息 (KV_BIND)。' }), {
+                status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
         }
 
+        const title = messageContent.substring(0, 60);
+        const content = messageContent;
+        const receivedAt = new Date().toISOString();
+
+        const messageData = {
+            title: title,
+            content: content,
+            receivedAt: receivedAt,
+        };
+
+        // 生成一个唯一的 key 来存储消息
+        const messageId = generateUUID();
+
+        // 将消息对象转换为 JSON 字符串存入 KV
+        await env.MESSAGES_KV.put(messageId, JSON.stringify(messageData));
+
+        return new Response(JSON.stringify({ success: true, message: '消息已成功接收并存储！', messageId: messageId }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        });
+
     } catch (error) {
-        console.error('Error processing request:', error);
-        return new Response(JSON.stringify({ success: false, message: '处理请求时发生内部错误。' }), {
+        console.error('Error processing POST request:', error);
+        // 避免在生产环境中暴露详细的错误信息给客户端
+        let errorMessage = '处理请求时发生内部错误。';
+        if (error instanceof SyntaxError && error.message.includes("JSON")) {
+            errorMessage = '请求体不是有效的 JSON 格式。';
+        }
+        return new Response(JSON.stringify({ success: false, message: errorMessage }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
         });
     }
 }
 
-// Cloudflare Pages Functions 也支持其他 HTTP 方法，如果需要的话
+// 如果 /api/submit 路径不需要 GET 方法，可以移除或返回一个提示
 export async function onRequestGet(context) {
-    return new Response("API endpoint. Use POST to submit data.", { status: 200 });
+    return new Response("此接口用于提交消息 (POST)，获取消息请使用 GET /api/message。", {
+        status: 405, // Method Not Allowed
+        headers: { 'Allow': 'POST' }
+    });
 }
