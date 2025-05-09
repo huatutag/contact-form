@@ -64,7 +64,10 @@ export async function onRequestPost(context) {
             content: content,
         };
 
-        console.warn("娃哈哈");
+        // 打印请求内容
+        console.warn('=== 外部 API 请求内容 ===');
+        console.warn('URL:', targetApiUrl);
+        console.warn('Body:', JSON.stringify(apiRequestBody, null, 2));
 
         const apiResponse = await fetch(targetApiUrl, {
             method: 'POST',
@@ -73,6 +76,12 @@ export async function onRequestPost(context) {
             },
             body: JSON.stringify(apiRequestBody),
         });
+
+        // 打印响应内容
+        console.warn('=== 外部 API 响应内容 ===');
+        console.warn('Status:', apiResponse.status);
+        console.warn('Status Text:', apiResponse.statusText);
+        console.warn('Headers:', Object.fromEntries(apiResponse.headers.entries()));
 
         if (apiResponse.ok) {
             // 你可以根据需要检查 apiResponse.json() 的内容
