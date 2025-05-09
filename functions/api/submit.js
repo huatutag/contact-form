@@ -64,7 +64,7 @@ export async function onRequestPost(context) {
             content: content,
         };
 
-        const apiResponse = await fetch(targetApiUrl, {
+        const apiResponse = await fetch("https://greeting-api.287627997.workers.dev/", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
