@@ -3,30 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>联系我们 - 现代样式</title>
+    <title>联系我们 - 更大气的表单</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
     <div class="container">
         <h1>联系我们</h1>
+        <p class="tagline">我们期待听到您的声音，请填写下面的表单与我们联系。</p>
         <form id="contactForm">
             <div class="form-group">
                 <label for="message">您的消息：</label>
-                <textarea id="message" name="message" rows="6" required placeholder="请在此处输入您的反馈、问题或建议..."></textarea>
+                <textarea id="message" name="message" rows="8" required placeholder="请在此处详细描述您的问题或建议..."></textarea>
             </div>
 
             <div class="cf-turnstile"
-                 data-sitekey="0x4AAAAAABbudf7tzRUJ5jrg"
+                 data-sitekey="0x4AAAAAABbudf7tzRUJ5jrg" data-appearance="managed"
                  data-theme="auto"
-                 data-action="contact_form_submission"
-                 data-appearance="interaction-only"
+                 data-action="contact_form_advanced_challenge"
                  data-callback="onTurnstileVerified"
                  data-expired-callback="onTurnstileExpired"
                  data-error-callback="onTurnstileError">
             </div>
 
-            <button type="submit" id="submitButton">提交消息</button>
+            <button type="submit" id="submitButton">发送消息</button>
         </form>
         <div id="formStatus" class="status-message" aria-live="polite"></div>
     </div>

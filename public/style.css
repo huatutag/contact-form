@@ -9,166 +9,176 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
-    background-color: #f0f2f5; /* 更柔和的背景色 */
-    color: #1c1e21; /* 主要文字颜色 */
+    background-color: #f0f2f5;
+    color: #1c1e21;
     line-height: 1.6;
     display: flex;
-    flex-direction: column; /* 允许页脚等内容 */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    padding: 20px;
-    -webkit-font-smoothing: antialiased; /* 字体抗锯齿 */
+    padding: 20px; /* 页面边距 */
+    -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
 .container {
     background-color: #ffffff;
-    padding: 30px 35px;
-    border-radius: 12px; /* 更圆润的边角 */
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1); /* 更柔和的阴影 */
+    padding: 40px 50px; /* 增加内边距，左右更宽敞 */
+    border-radius: 16px; /* 更大的圆角 */
+    box-shadow: 0 12px 38px rgba(0, 0, 0, 0.12), 0 5px 12px rgba(0, 0, 0, 0.08); /* 更柔和且有层次的阴影 */
     width: 100%;
-    max-width: 550px; /* 稍微加宽以适应内容 */
-    text-align: left; /* 容器内文本默认左对齐 */
+    max-width: 720px; /* 显著增加最大宽度，使其更大气 */
+    text-align: left;
     transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
 }
 
+@media (max-width: 768px) { /* 中等屏幕调整 */
+    .container {
+        padding: 30px 35px;
+        max-width: 90%;
+    }
+}
+
+@media (max-width: 480px) { /* 小型屏幕调整 */
+    .container {
+        padding: 25px 20px;
+        max-width: 100%;
+        border-radius: 12px;
+    }
+    body {
+        padding: 10px;
+    }
+}
+
+
 .container:hover {
-    transform: translateY(-3px); /* 轻微上浮效果 */
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+    transform: translateY(-5px);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.15), 0 8px 15px rgba(0, 0, 0, 0.1);
 }
 
 h1 {
-    color: #1877f2; /* Facebook风格的蓝色，或选择一个品牌色 */
-    margin-bottom: 30px;
-    font-size: 28px; /* 调整标题大小 */
-    font-weight: 700; /* 加粗 */
-    text-align: center; /* 标题居中 */
+    color: #121212; /* 更深、更稳重的标题颜色 */
+    margin-bottom: 15px; /* 调整与副标题间距 */
+    font-size: 36px; /* 增加标题字号 */
+    font-weight: 700;
+    text-align: center;
+}
+
+.tagline {
+    color: #555;
+    font-size: 18px; /* 副标题字号 */
+    text-align: center;
+    margin-bottom: 40px; /* 增加与表单间距 */
 }
 
 .form-group {
-    margin-bottom: 25px;
+    margin-bottom: 30px; /* 增加表单组间距 */
 }
 
 .form-group label {
     display: block;
-    margin-bottom: 10px;
+    margin-bottom: 12px; /* 增加标签与输入框间距 */
     font-weight: 600;
-    color: #333; /* 深色标签文字 */
-    font-size: 16px;
+    color: #333;
+    font-size: 17px; /* 标签字号 */
 }
 
 textarea {
     width: 100%;
-    padding: 15px; /* 增加内边距 */
-    border: 1px solid #ccd0d5; /* 更柔和的边框颜色 */
-    border-radius: 8px; /* 更圆润的边角 */
-    font-size: 16px;
+    padding: 18px 22px; /* 大幅增加文本框内边距 */
+    border: 1px solid #d0d7de; /* GitHub风格的边框颜色 */
+    border-radius: 10px; /* 文本框圆角 */
+    font-size: 16px; /* 文本框内文字大小 */
+    line-height: 1.5;
     resize: vertical;
-    min-height: 120px;
+    min-height: 180px; /* 增加文本框最小高度 */
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    background-color: #f5f6f7; /* 文本框背景色 */
+    background-color: #f6f8fa; /* 轻微的背景色 */
 }
 
 textarea:focus {
-    border-color: #1877f2; /* 焦点颜色 */
+    border-color: #0969da; /* 焦点颜色 (GitHub Blue) */
     outline: none;
-    box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.2); /* 焦点外发光 */
+    box-shadow: 0 0 0 3.5px rgba(9, 105, 218, 0.2); /* 焦点外发光 */
     background-color: #fff;
 }
 
 button[type="submit"] {
-    background-color: #1877f2; /* 主题色 */
+    background-color: #2da44e; /* GitHub风格的绿色按钮 */
     color: white;
-    padding: 14px 25px; /* 调整按钮内边距 */
-    border: none;
+    padding: 16px 30px; /* 增加按钮内边距 */
+    border: 1px solid rgba(27, 31, 36, 0.15);
     border-radius: 8px;
     cursor: pointer;
-    font-size: 17px; /* 调整按钮字体大小 */
+    font-size: 18px; /* 按钮字体大小 */
     font-weight: 600;
-    transition: background-color 0.2s ease, transform 0.1s ease;
-    width: 100%; /* 按钮宽度占满 */
-    display: block; /* 确保宽度生效 */
+    transition: background-color 0.2s cubic-bezier(0.3, 0, 0.5, 1);
+    width: 100%;
+    display: block;
     text-align: center;
+    box-shadow: 0 1px 0 rgba(27, 31, 36, 0.04), inset 0 2px 0 rgba(255, 255, 255, 0.25);
 }
 
 button[type="submit"]:hover:not(:disabled) {
-    background-color: #166fe5; /* 悬停时颜色加深 */
-    transform: translateY(-1px); /* 轻微上移 */
+    background-color: #2c974b; /* 悬停颜色加深 */
 }
 
 button[type="submit"]:active:not(:disabled) {
-    transform: translateY(0px); /* 点击时恢复 */
-    background-color: #1465d0; /* 点击时颜色再深一点 */
+    background-color: #298e46;
+    box-shadow: inset 0 1px 0 rgba(20, 70, 32, 0.2);
 }
 
 button[type="submit"]:disabled {
-    background-color: #a0c3ff; /* 禁用时颜色变浅 */
-    color: #e0e0e0;
+    background-color: #94d3a2; /* 禁用时颜色变浅 */
+    color: rgba(255, 255, 255, 0.8);
     cursor: not-allowed;
+    border-color: rgba(27, 31, 36, 0.1);
 }
 
 .cf-turnstile {
-    margin: 25px auto; /* 上下边距，自动左右居中 */
-    display: flex; /* 使用flex居中内部元素 */
+    margin: 30px auto; /* 增加验证码区域的上下边距 */
+    display: flex;
     justify-content: center;
 }
 
+/* 当Turnstile以 managed 模式加载托管质询时，它可能会插入一个iframe，
+   我们可能需要确保其在容器内正确显示，但这通常由Turnstile脚本自身处理。
+   如果出现布局问题，可能需要针对 .cf-challenge (如果Turnstile使用此class) 或 iframe 进行调整。
+*/
+.cf-turnstile iframe { /* 示例：确保iframe响应式，通常不需要 */
+    max-width: 100%;
+}
+
+
 .status-message {
-    margin-top: 25px;
-    padding: 12px 18px;
+    margin-top: 30px; /* 增加状态消息与按钮间距 */
+    padding: 15px 20px; /* 增加状态消息内边距 */
     border-radius: 8px;
     font-weight: 500;
-    font-size: 15px;
-    text-align: center; /* 状态消息居中 */
-    display: none; /* 默认隐藏，通过JS控制显示 */
+    font-size: 16px;
+    text-align: center;
+    display: none;
 }
 
 .status-message.show {
-    display: block; /* JS控制显示 */
+    display: block;
 }
 
 .status-message.success {
-    background-color: #e6ffed; /* 更柔和的成功背景 */
-    color: #006421; /* 成功的文字颜色 */
-    border: 1px solid #b7ebc3;
+    background-color: #ddf4ff; /* 更明亮的成功背景 (可自定义) */
+    color: #00529b;
+    border: 1px solid #b6e0ff;
 }
 
 .status-message.error {
-    background-color: #ffebee; /* 更柔和的错误背景 */
-    color: #c62828; /* 错误的文字颜色 */
-    border: 1px solid #ffcdd2;
+    background-color: #ffe3e6; /* 更明亮的错误背景 (可自定义) */
+    color: #d8000c;
+    border: 1px solid #ffb8c1;
 }
 
-/* 响应式设计 */
-@media (max-width: 600px) {
-    body {
-        padding: 15px;
-    }
-
-    .container {
-        padding: 20px 25px;
-        margin-top: 20px; /* 手机端顶部留些空间 */
-        margin-bottom: 20px; /* 手机端底部留些空间 */
-    }
-
-    h1 {
-        font-size: 24px;
-        margin-bottom: 25px;
-    }
-
-    textarea {
-        padding: 12px;
-        min-height: 100px;
-        font-size: 15px;
-    }
-
-    button[type="submit"] {
-        padding: 12px 20px;
-        font-size: 16px;
-    }
-
-    .status-message {
-        font-size: 14px;
-    }
+.status-message.info { /* 新增info状态样式 */
+    background-color: #e7e7e7;
+    color: #4f4f4f;
+    border: 1px solid #d7d7d7;
 }
