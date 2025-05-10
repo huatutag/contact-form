@@ -66,7 +66,7 @@ export async function onRequestPost(context) {
                     console.log(`IP ${ip} is rate-limited. Time left: ${minutesLeft} minutes.`);
                     return new Response(JSON.stringify({
                         success: false,
-                        message: `操作过于频繁，请在 ${minutesLeft} 分钟后再试。`
+                        message: `当前ip操作过于频繁，请在 ${minutesLeft} 分钟后再试，或换个节点再试。`
                     }), {
                         status: 429, // Too Many Requests
                         headers: { 'Content-Type': 'application/json' },
