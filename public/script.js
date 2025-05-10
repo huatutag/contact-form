@@ -3,6 +3,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageInput = document.getElementById('message');
     const submitButton = document.getElementById('submitButton');
     const formStatus = document.getElementById('formStatus');
+    let turnstileToken = null; // 用于存储Turnstile令牌
+
+    // Turnstile 回调函数
+    window.onTurnstileVerified = function (token) {
+        console.log('Turnstile verified:', token);
+        turnstileToken = token;
+        // 可以在这里启用提交按钮，如果之前是禁用的
+        // submitButton.disabled = false;
+        // showStatus('验证成功，您可以提交了。', 'success'); // 可选提示
+    };
+
+    window.onTurnstileExpired = function () {
+        console.log('Turnstile token expired.');
+        turnstileToken = null;
+        showStatus('人机验证已过期，请重试。', 'error');
+        // 可能需要重置Turnstile或禁用提交按钮
+        if (typeof turnstile !== 'undefined') {
+            turnstile.reset();
+        }
+        submitButton.disabled = true; // 建议禁用，直到重新验证
+    };
+
+    window.onTurnstileError = function (errorCode) {
+        console.error('Turnstile error:', errorCode);
+        turnstileToken = null;
+        showStatus('人机验证加载失败，请刷新页面或稍后再试。错误代码: ' + errorCode, 'error');
+        submitButton.disabled = true; // 发生错误时禁用提交
+    };
+
 
     contactForm.addEventListener('submit', async function(event) {
         event.preventDefault();
@@ -17,29 +46,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 从表单中获取 Turnstile 令牌
-        // Turnstile widget 会自动将 token 注入到名为 'cf-turnstile-response' 的隐藏 input 中
-        const turnstileToken = this.elements['cf-turnstile-response']?.value;
+        // 从回调中获取Turnstile令牌，或者如果appearance不是interaction-only，可以尝试从表单元素获取
+        const currentToken = turnstileToken || this.elements['cf-turnstile-response']?.value;
 
-        if (!turnstileToken) {
-            showStatus('无法验证请求，请确保人机验证已加载。', 'error');
+        if (!currentToken) {
+            showStatus('人机验证未完成或已过期，请稍候或重试。', 'error');
             submitButton.disabled = false;
-            // 尝试重置 Turnstile (如果需要)
-            // if (typeof turnstile !== 'undefined') {
-            //     turnstile.reset();
-            // }
+            if (typeof turnstile !== 'undefined') {
+                turnstile.reset(); // 尝试重置
+            }
             return;
         }
 
+        showStatus('正在提交，请稍候...', 'info'); // 添加一个处理中的状态
+
         try {
-            const response = await fetch('/api/submit', { // 指向我们的 Worker
+            const response = await fetch('/api/submit', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     message: message,
-                    'cf-turnstile-response': turnstileToken
+                    'cf-turnstile-response': currentToken,
+                    // 可以选择性地将 action 或 cdata 也发送到后端进行更严格的校验
+                    // 'action': 'contact_form_submission' // 如果你在后端校验这个
                 }),
             });
 
@@ -48,28 +79,80 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok && result.success) {
                 showStatus('消息提交成功！感谢您的反馈。', 'success');
                 contactForm.reset(); // 清空表单
-                // Cloudflare Turnstile 会在成功提交后自动重置，或在特定时间后过期
-                // 如果需要手动重置：
+                turnstileToken = null; // 重置令牌状态
                 if (typeof turnstile !== 'undefined') {
-                     turnstile.reset();
+                     turnstile.reset(); // 重置Turnstile小部件以供下次使用
                 }
             } else {
-                showStatus(result.message || '提交失败，请稍后再试。', 'error');
-                // 如果是 Turnstile 验证失败，也可能需要重置
-                if (typeof turnstile !== 'undefined' && response.status === 403) {
-                     turnstile.reset();
+                let errorMessage = result.message || '提交失败，请稍后再试。';
+                if (response.status === 403) {
+                     errorMessage = '人机验证失败，请重试。 ' + (result.message || '');
+                }
+                showStatus(errorMessage.trim(), 'error');
+                if (typeof turnstile !== 'undefined') {
+                     turnstile.reset(); // 验证失败或出错时也重置
                 }
             }
         } catch (error) {
             console.error('提交错误:', error);
-            showStatus('发生网络错误，请检查您的连接。', 'error');
+            showStatus('发生网络错误，请检查您的连接并重试。', 'error');
+            if (typeof turnstile !== 'undefined') {
+                 turnstile.reset();
+            }
         } finally {
-            submitButton.disabled = false;
+            // 根据情况决定是否恢复按钮，通常成功后表单重置，按钮会保持可提交状态
+            // 如果是interaction-only，可能需要用户再次交互来重新验证
+            if (contactForm.elements['cf-turnstile-response']?.value || turnstileToken) {
+                 submitButton.disabled = false;
+            } else if(document.querySelector('.cf-turnstile[data-appearance="interaction-only"]')) {
+                 submitButton.disabled = true; // 如果是交互模式且没有token，保持禁用
+            } else {
+                 submitButton.disabled = false; // 其他情况启用
+            }
         }
     });
 
     function showStatus(message, type) {
         formStatus.textContent = message;
-        formStatus.className = `status-message ${type}`;
+        // 确保先移除所有可能的类型类，再添加当前的类型类和show类
+        formStatus.className = 'status-message';
+        if (type) {
+            formStatus.classList.add(type);
+        }
+        formStatus.classList.add('show'); // 添加show类以显示
+    }
+
+    // 如果Turnstile设置为 interaction-only，用户可能需要先与表单交互
+    // 我们可以通过监听输入框的聚焦事件来“激活”提交按钮（如果Turnstile已经验证过）
+    if (document.querySelector('.cf-turnstile[data-appearance="interaction-only"]')) {
+        messageInput.addEventListener('focus', () => {
+            if (turnstileToken) { // 如果之前已经通过回调获取了token
+                // submitButton.disabled = false; // 这可能太早，还是等验证成功回调
+            }
+        });
+        // 初始时，如果 data-appearance="interaction-only"，提交按钮可以是禁用的，直到Turnstile验证
+        submitButton.disabled = true;
+        // 监听 Turnstile 渲染完成的事件 (如果需要)
+        // document.addEventListener('turnstile.render', function(event) {
+        //     const widgetId = event.detail.widgetId;
+        //     console.log("Turnstile widget rendered: " + widgetId);
+        //     if(turnstileToken){ // 如果已有token
+        //       submitButton.disabled = false;
+        //     } else {
+        //       submitButton.disabled = true;
+        //     }
+        // });
+
+        // 或者，更简单的方式是，依赖 onTurnstileVerified 回调来启用按钮
+        const originalOnVerified = window.onTurnstileVerified;
+        window.onTurnstileVerified = function(token) {
+            if (originalOnVerified) originalOnVerified(token);
+            submitButton.disabled = false; // 验证成功后启用提交按钮
+            // 清除可能存在的因 token 过期或错误而显示的消息
+            if (formStatus.textContent.includes('验证') || formStatus.textContent.includes('error')) {
+                formStatus.className = 'status-message';
+                formStatus.textContent = '';
+            }
+        };
     }
 });

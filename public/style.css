@@ -1,100 +1,174 @@
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f4f7f6;
+/* 基本重置和全局样式 */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
     margin: 0;
-    padding: 20px;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+    background-color: #f0f2f5; /* 更柔和的背景色 */
+    color: #1c1e21; /* 主要文字颜色 */
+    line-height: 1.6;
     display: flex;
-    justify-content: center;
+    flex-direction: column; /* 允许页脚等内容 */
     align-items: center;
+    justify-content: center;
     min-height: 100vh;
-    color: #333;
+    padding: 20px;
+    -webkit-font-smoothing: antialiased; /* 字体抗锯齿 */
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .container {
     background-color: #ffffff;
-    padding: 30px 40px;
-    border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    padding: 30px 35px;
+    border-radius: 12px; /* 更圆润的边角 */
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1); /* 更柔和的阴影 */
     width: 100%;
-    max-width: 500px;
-    text-align: center;
+    max-width: 550px; /* 稍微加宽以适应内容 */
+    text-align: left; /* 容器内文本默认左对齐 */
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.container:hover {
+    transform: translateY(-3px); /* 轻微上浮效果 */
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
 }
 
 h1 {
-    color: #2c3e50;
-    margin-bottom: 25px;
+    color: #1877f2; /* Facebook风格的蓝色，或选择一个品牌色 */
+    margin-bottom: 30px;
+    font-size: 28px; /* 调整标题大小 */
+    font-weight: 700; /* 加粗 */
+    text-align: center; /* 标题居中 */
 }
 
 .form-group {
-    margin-bottom: 20px;
-    text-align: left;
+    margin-bottom: 25px;
 }
 
 .form-group label {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     font-weight: 600;
-    color: #555;
+    color: #333; /* 深色标签文字 */
+    font-size: 16px;
 }
 
 textarea {
     width: 100%;
-    padding: 12px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    box-sizing: border-box;
+    padding: 15px; /* 增加内边距 */
+    border: 1px solid #ccd0d5; /* 更柔和的边框颜色 */
+    border-radius: 8px; /* 更圆润的边角 */
     font-size: 16px;
     resize: vertical;
-    min-height: 100px;
+    min-height: 120px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background-color: #f5f6f7; /* 文本框背景色 */
 }
 
 textarea:focus {
-    border-color: #3498db;
+    border-color: #1877f2; /* 焦点颜色 */
     outline: none;
-    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+    box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.2); /* 焦点外发光 */
+    background-color: #fff;
 }
 
 button[type="submit"] {
-    background-color: #3498db;
+    background-color: #1877f2; /* 主题色 */
     color: white;
-    padding: 12px 20px;
+    padding: 14px 25px; /* 调整按钮内边距 */
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 17px; /* 调整按钮字体大小 */
     font-weight: 600;
-    transition: background-color 0.3s ease;
-    width: 100%;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    width: 100%; /* 按钮宽度占满 */
+    display: block; /* 确保宽度生效 */
+    text-align: center;
 }
 
-button[type="submit"]:hover {
-    background-color: #2980b9;
+button[type="submit"]:hover:not(:disabled) {
+    background-color: #166fe5; /* 悬停时颜色加深 */
+    transform: translateY(-1px); /* 轻微上移 */
+}
+
+button[type="submit"]:active:not(:disabled) {
+    transform: translateY(0px); /* 点击时恢复 */
+    background-color: #1465d0; /* 点击时颜色再深一点 */
 }
 
 button[type="submit"]:disabled {
-    background-color: #bdc3c7;
+    background-color: #a0c3ff; /* 禁用时颜色变浅 */
+    color: #e0e0e0;
     cursor: not-allowed;
 }
 
 .cf-turnstile {
-    margin: 20px auto; /* 居中显示 Turnstile widget */
+    margin: 25px auto; /* 上下边距，自动左右居中 */
+    display: flex; /* 使用flex居中内部元素 */
+    justify-content: center;
 }
 
 .status-message {
-    margin-top: 20px;
-    padding: 10px;
-    border-radius: 5px;
+    margin-top: 25px;
+    padding: 12px 18px;
+    border-radius: 8px;
     font-weight: 500;
+    font-size: 15px;
+    text-align: center; /* 状态消息居中 */
+    display: none; /* 默认隐藏，通过JS控制显示 */
+}
+
+.status-message.show {
+    display: block; /* JS控制显示 */
 }
 
 .status-message.success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+    background-color: #e6ffed; /* 更柔和的成功背景 */
+    color: #006421; /* 成功的文字颜色 */
+    border: 1px solid #b7ebc3;
 }
 
 .status-message.error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+    background-color: #ffebee; /* 更柔和的错误背景 */
+    color: #c62828; /* 错误的文字颜色 */
+    border: 1px solid #ffcdd2;
+}
+
+/* 响应式设计 */
+@media (max-width: 600px) {
+    body {
+        padding: 15px;
+    }
+
+    .container {
+        padding: 20px 25px;
+        margin-top: 20px; /* 手机端顶部留些空间 */
+        margin-bottom: 20px; /* 手机端底部留些空间 */
+    }
+
+    h1 {
+        font-size: 24px;
+        margin-bottom: 25px;
+    }
+
+    textarea {
+        padding: 12px;
+        min-height: 100px;
+        font-size: 15px;
+    }
+
+    button[type="submit"] {
+        padding: 12px 20px;
+        font-size: 16px;
+    }
+
+    .status-message {
+        font-size: 14px;
+    }
 }

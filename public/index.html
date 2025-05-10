@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>联系我</title>
+    <title>联系我们 - 现代样式</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
@@ -13,11 +13,20 @@
         <form id="contactForm">
             <div class="form-group">
                 <label for="message">您的消息：</label>
-                <textarea id="message" name="message" rows="6" required></textarea>
+                <textarea id="message" name="message" rows="6" required placeholder="请在此处输入您的反馈、问题或建议..."></textarea>
             </div>
 
-            <div class="cf-turnstile" data-sitekey="0x4AAAAAABbudf7tzRUJ5jrg" data-theme="light"></div>
-            <button type="submit" id="submitButton">提交</button>
+            <div class="cf-turnstile"
+                 data-sitekey="0x4AAAAAABbudf7tzRUJ5jrg"
+                 data-theme="auto"
+                 data-action="contact_form_submission"
+                 data-appearance="interaction-only"
+                 data-callback="onTurnstileVerified"
+                 data-expired-callback="onTurnstileExpired"
+                 data-error-callback="onTurnstileError">
+            </div>
+
+            <button type="submit" id="submitButton">提交消息</button>
         </form>
         <div id="formStatus" class="status-message" aria-live="polite"></div>
     </div>
