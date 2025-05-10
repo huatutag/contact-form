@@ -1,6 +1,6 @@
 // functions/api/submit.js
 
-const RATE_LIMIT_DURATION_SECONDS = 10 * 60; // 10 分钟的秒数
+const RATE_LIMIT_DURATION_SECONDS = 3 * 60; // 3 分钟的秒数
 const KV_KEY_PREFIX = "ip_submit_marker:"; // KV 键前缀，避免与其他键冲突
 
 /**
