@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
 
             if (response.ok && result.success) {
-                showStatus('消息提交成功！感谢您的反馈。', 'success');
+                showStatus('短信发送成功。', 'success');
                 contactForm.reset(); // 清空表单
                 turnstileToken = null; // 重置令牌状态
                 if (typeof turnstile !== 'undefined') {

@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>联系我们 - 更大气的表单</title>
+    <title>给我发短信</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
     <div class="container">
-        <h1>联系我们</h1>
-        <p class="tagline">我们期待听到您的声音，请填写下面的表单与我们联系。</p>
+        <h1>给我发短信</h1>
+        <p class="tagline">通过下面输入框可以给我发短信，请附上你的联系方式，方便我联系你。</p>
         <form id="contactForm">
             <div class="form-group">
                 <label for="message">您的消息：</label>
-                <textarea id="message" name="message" rows="8" required placeholder="请在此处详细描述您的问题或建议..."></textarea>
+                <textarea id="message" name="message" rows="8" required placeholder="请在此处填写您的消息，并附上您的联系方式..."></textarea>
             </div>
 
             <div class="cf-turnstile"
@@ -26,7 +26,7 @@
                  data-error-callback="onTurnstileError">
             </div>
 
-            <button type="submit" id="submitButton">发送消息</button>
+            <button type="submit" id="submitButton">发送短信</button>
         </form>
         <div id="formStatus" class="status-message" aria-live="polite"></div>
     </div>
