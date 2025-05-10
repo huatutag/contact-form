@@ -5,7 +5,7 @@ export async function onRequestPost(context) {
         const { request, env } = context;
         const body = await request.json();
 
-        let messageContent = body.message; // 使用let，因为可能会被清理后的内容替换
+        let messageContent = body.message;
         const token = body['cf-turnstile-response'];
         const ip = request.headers.get('CF-Connecting-IP');
 
@@ -21,7 +21,7 @@ export async function onRequestPost(context) {
         let formData = new FormData();
         formData.append('secret', TURNSTILE_SECRET_KEY);
         formData.append('response', token);
-        if (ip) { // 确保ip存在时才添加
+        if (ip) {
             formData.append('remoteip', ip);
         }
 
@@ -62,10 +62,8 @@ export async function onRequestPost(context) {
                 status: 400, headers: { 'Content-Type': 'application/json' },
             });
         }
-        
-        // （可选）非常基础的HTML标签移除。
-        let contentToStore = messageContent.replace(/<[^>]*>/g, "").trim();
 
+        let contentToStore = messageContent.replace(/<[^>]*>/g, "").trim();
 
         // 3. 敏感词检查 (在输入验证通过后，入库前)
         const sensitiveCheckApiUrl = `https://v.api.aa1.cn/api/api-mgc/index.php?msg=${encodeURIComponent(contentToStore)}`;
@@ -73,23 +71,26 @@ export async function onRequestPost(context) {
             const sensitiveCheckResponse = await fetch(sensitiveCheckApiUrl);
             if (sensitiveCheckResponse.ok) {
                 const sensitiveCheckResult = await sensitiveCheckResponse.json();
-                // {"code":200,"num":"1","desc":"存在敏感词","ci":"色情"}
+                // API 示例响应: {"code":200,"num":"1","desc":"存在敏感词","ci":"色情"}
                 if (sensitiveCheckResult && sensitiveCheckResult.num === "1") {
                     console.log('Sensitive word detected:', sensitiveCheckResult);
-                    return new Response(JSON.stringify({ success: false, message: `消息中包含敏感词 (${sensitiveCheckResult.desc || '详情未知'})，无法提交。` }), {
+                    // 修改点：优化提示信息，更清晰地展示 API 返回的 desc 和 ci
+                    const reasonDesc = sensitiveCheckResult.desc || '检测到敏感内容';
+                    const reasonCi = sensitiveCheckResult.ci || '未指定类别';
+                    return new Response(JSON.stringify({
+                        success: false,
+                        message: `提交失败：${reasonDesc} (类别: ${reasonCi})。请修改后重试。`
+                    }), {
                         status: 400, headers: { 'Content-Type': 'application/json' },
                     });
                 }
             } else {
-                // API请求不成功 (例如 404, 500等)，按要求继续后续操作
                 console.warn(`Sensitive word check API request failed with status: ${sensitiveCheckResponse.status}. Proceeding with submission.`);
             }
         } catch (apiError) {
-            // API请求本身失败 (例如网络问题，DNS问题等)，按要求继续后续操作
             console.error('Sensitive word check API request failed:', apiError);
-            // 在这种情况下，我们仍然继续进行存库操作
+            // 按要求，API请求失败时仍然继续进行存库操作
         }
-
 
         // 4. 存库操作
         if (!env.DB) {
