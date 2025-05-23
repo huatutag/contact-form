@@ -134,7 +134,6 @@ export async function onRequestPost(context) {
         const token = body['cf-turnstile-response'];
         const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || "unknown_ip";
 
-
         // 0. 检查必要的环境变量绑定
         if (!env.TURNSTILE_SECRET_KEY) {
             console.error("TURNSTILE_SECRET_KEY is not set in environment variables.");
@@ -148,9 +147,15 @@ export async function onRequestPost(context) {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (!env.DB) { // D1 数据库绑定检查移到实际使用前
-            console.error("D1 Database (DB) is not bound.");
-            return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (D1_BIND)。' }), {
+        if (!env.EMAIL_API_URL) { // 新增: 检查邮件API URL
+            console.error("EMAIL_API_URL is not set in environment variables.");
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_URL)。' }), {
+                status: 500, headers: { 'Content-Type': 'application/json' },
+            });
+        }
+        if (!env.EMAIL_API_KEY) { // 新增: 检查邮件API Key
+            console.error("EMAIL_API_KEY is not set in environment variables.");
+            return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_KEY)。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
@@ -256,48 +261,80 @@ export async function onRequestPost(context) {
         // 如果 sensitiveCheckResult.error 但 !sensitiveCheckResult.critical (如果未来添加这种逻辑)，可以记录警告并继续
         console.log(`Aizhan API check passed for IP ${ip}. No sensitive words detected or non-critical error.`);
 
-
-        // 5. 存库操作与更新 IP 防刷记录
-        const title = contentToStore.substring(0, 60); // 使用处理后的 contentToStore
-        const receivedAt = new Date().toISOString();
-
+        // 5. 发送邮件并通过第三方 API 及更新 IP 防刷记录
         try {
-            // 在真正执行数据库写入前，更新 KV 中的 IP 提交时间戳
+            // 首先更新 KV 中的 IP 提交时间戳
             await env.IP_RATE_LIMIT_KV.put(kvKey, Math.floor(Date.now() / 1000).toString(), {
                 expirationTtl: RATE_LIMIT_DURATION_SECONDS
             });
             console.log(`IP ${ip} rate limit marker updated in KV. Expires in ${RATE_LIMIT_DURATION_SECONDS}s.`);
 
-            const stmt = env.DB.prepare(
-                'INSERT INTO messages (title, content, received_at) VALUES (?, ?, ?)'
-            );
-            const dbResult = await stmt.bind(title, contentToStore, receivedAt).run();
+            // 构建邮件API请求
+            const emailApiEndpoint = `${env.EMAIL_API_URL}?key=${env.EMAIL_API_KEY}`;
+            const emailPayload = {
+                email_content: contentToStore
+            };
 
-            if (dbResult.success) {
-                console.log(`Message from IP ${ip} successfully stored with ID: ${dbResult.meta.last_row_id}.`);
+            console.log(`Attempting to send email for IP ${ip} via API: ${env.EMAIL_API_URL}`);
+            const emailResponse = await fetch(emailApiEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(emailPayload)
+            });
+
+            if (emailResponse.ok) {
+                let emailResponseData = {};
+                try {
+                    // 尝试解析JSON，但如果API不返回JSON或返回空，则优雅处理
+                     const contentType = emailResponse.headers.get("content-type");
+                     if (contentType && contentType.indexOf("application/json") !== -1) {
+                        emailResponseData = await emailResponse.json();
+                     } else {
+                        emailResponseData = {responseText: await emailResponse.text()};
+                     }
+                } catch (e) {
+                    console.warn(`Could not parse JSON response from email API for IP ${ip}: ${e.message}. Status: ${emailResponse.status}`);
+                    emailResponseData = { responseText: "Response was not valid JSON or was empty."};
+                }
+
+                console.log(`Email successfully sent for IP ${ip}. API Response:`, emailResponseData);
                 return new Response(JSON.stringify({
                     success: true,
-                    message: '消息已成功提交！',
-                    messageId: dbResult.meta.last_row_id
+                    message: '消息已成功通过邮件发送！',
+                    apiResponse: emailResponseData // 可选：包含部分API响应
                 }), {
-                    status: 201,
+                    status: 200, // 200 OK since the primary action (emailing) was successful
                     headers: { 'Content-Type': 'application/json' },
                 });
             } else {
-                console.error(`D1 Insert failed for IP ${ip}:`, dbResult.error);
-                return new Response(JSON.stringify({ success: false, message: '存储消息到数据库失败。' }), {
-                    status: 500, headers: { 'Content-Type': 'application/json' },
+                const errorBodyText = await emailResponse.text();
+                console.error(`Email API request failed for IP ${ip}: ${emailResponse.status} ${emailResponse.statusText}. Body: ${errorBodyText}`);
+                return new Response(JSON.stringify({
+                    success: false,
+                    message: `邮件发送失败 (API错误: ${emailResponse.status})。请联系管理员。`,
+                    details: errorBodyText
+                }), {
+                    status: 502, // Bad Gateway: our server acting as a proxy got an invalid response
+                    headers: { 'Content-Type': 'application/json' },
                 });
             }
-        } catch (dbError) {
-            console.error(`D1 Database error during insert for IP ${ip}:`, dbError);
-            return new Response(JSON.stringify({ success: false, message: '数据库操作错误。' }), {
+        } catch (apiError) {
+            console.error(`Error during email API call or KV update for IP ${ip}:`, apiError);
+             if (apiError.type === 'บัตรผ่าน' || (apiError.cause && (apiError.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || apiError.cause.code === 'ENOTFOUND'))) {
+                return new Response(JSON.stringify({ success: false, message: `邮件服务或内部存储连接超时，请稍后重试。 (${apiError.message})` }), {
+                    status: 504, // Gateway Timeout
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            return new Response(JSON.stringify({ success: false, message: '发送邮件或更新状态时发生内部错误。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
 
     } catch (error) {
-        console.error('Error processing POST request:', error);
+        console.error('General error processing POST request:', error);
         let errorMessage = '处理请求时发生内部错误。';
         let errorStatus = 500;
 
@@ -305,12 +342,10 @@ export async function onRequestPost(context) {
             errorMessage = '请求体不是有效的JSON格式或为空。';
             errorStatus = 400;
         } else if (error.type === 'บัตรผ่าน' || (error.cause && (error.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || error.cause.code === 'ENOTFOUND'))) {
-            console.error('Fetch error (e.g., network issue with Turnstile or D1):', error);
-            errorMessage = '与外部服务通信时发生网络错误，请稍后重试。';
-            errorStatus = 503; // Service Unavailable
-        }
-        // 如果是自定义的错误对象，并且有 status 属性
-        else if (error.status) {
+            console.error('Outer fetch error (e.g., network issue with Turnstile):', error);
+            errorMessage = '与外部验证服务通信时发生网络错误，请稍后重试。';
+            errorStatus = 503;
+        } else if (error.status) {
             errorStatus = error.status;
             if(error.message) errorMessage = error.message;
         }
@@ -323,7 +358,6 @@ export async function onRequestPost(context) {
 }
 
 export async function onRequestGet(context) {
-    // 保持不变，提示此端点仅用于POST
     return new Response("此接口用于提交消息 (POST)，获取消息请使用 GET /api/message。", {
         status: 405, headers: { 'Allow': 'POST' }
     });
