@@ -1,4 +1,4 @@
-// functions/api/internal_email.js
+// functions/api/openapi.js
 
 const MAX_MESSAGE_LENGTH = 500; // Maximum characters for the message
 const MIN_MESSAGE_LENGTH = 1;   // Minimum characters for the message (after basic trim)
