@@ -10,7 +10,7 @@ const KV_KEY_PREFIX = "ip_submit_marker:"; // KV 键前缀，避免与其他键�
  * - { sensitive: true, message: string, details: any[] } if sensitive words are found.
  * - { sensitive: false } if no sensitive words are found.
  * - { error: true, critical: boolean, message: string, details?: any } if an error occurred during the check.
- * 'critical' indicates if the main process should halt.
+ * 'critical' indicates if the main process should halt (or in this adjusted version, trigger a warning and prefix).
  */
 async function checkSensitiveWordsAizhan(textToCheck) {
     const initialUrl = 'https://tools.aizhan.com/forbidword/';
@@ -50,7 +50,6 @@ async function checkSensitiveWordsAizhan(textToCheck) {
         const csrfTokenRegex = /<input\s+type="hidden"\s+name="_csrf"\s+value="([^"]+)"/;
         let csrfMatch = pageHtml.match(csrfTokenRegex);
         if (!csrfMatch || !csrfMatch[1]) {
-            // Fallback: try to find CSRF in meta tag
             const csrfMetaRegex = /<meta\s+name="csrf-token"\s+content="([^"]+)"/;
             csrfMatch = pageHtml.match(csrfMetaRegex);
         }
@@ -116,7 +115,6 @@ async function checkSensitiveWordsAizhan(textToCheck) {
 
     } catch (apiError) {
         console.error(`Aizhan API call failed entirely for text "${textToCheck.substring(0,50)}...":`, apiError);
-        // Check for specific timeout errors from fetch
         if (apiError.type === 'บัตรผ่าน' || (apiError.cause && (apiError.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || apiError.cause.code === 'UND_ERR_HEADERS_TIMEOUT'))) {
              return { error: true, critical: true, message: `敏感词服务连接超时，请稍后重试。(${apiError.message})`, cause: apiError };
         }
@@ -147,13 +145,13 @@ export async function onRequestPost(context) {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (!env.EMAIL_API_URL) { // 新增: 检查短信API URL
+        if (!env.EMAIL_API_URL) {
             console.error("EMAIL_API_URL is not set in environment variables.");
             return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_URL)。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (!env.EMAIL_API_KEY) { // 新增: 检查短信API Key
+        if (!env.EMAIL_API_KEY) {
             console.error("EMAIL_API_KEY is not set in environment variables.");
             return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_KEY)。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
@@ -161,14 +159,14 @@ export async function onRequestPost(context) {
         }
 
         // 1. 验证 Turnstile Token
-        let formData = new FormData();
-        formData.append('secret', env.TURNSTILE_SECRET_KEY);
-        formData.append('response', token);
-        formData.append('remoteip', ip); // Always include IP
+        let turnstileFormData = new FormData();
+        turnstileFormData.append('secret', env.TURNSTILE_SECRET_KEY);
+        turnstileFormData.append('response', token);
+        turnstileFormData.append('remoteip', ip);
 
         const turnstileUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
         const turnstileResult = await fetch(turnstileUrl, {
-            body: formData,
+            body: turnstileFormData,
             method: 'POST',
         });
         const turnstileOutcome = await turnstileResult.json();
@@ -181,7 +179,7 @@ export async function onRequestPost(context) {
         }
         console.log(`Turnstile verification successful for IP ${ip}.`);
 
-        // 2. IP 防刷检查 (Turnstile 通过后)
+        // 2. IP 防刷检查
         const kvKey = `${KV_KEY_PREFIX}${ip}`;
         const lastSubmissionTimestampStr = await env.IP_RATE_LIMIT_KV.get(kvKey);
 
@@ -198,7 +196,7 @@ export async function onRequestPost(context) {
                     success: false,
                     message: `当前ip操作过于频繁，请在 ${minutesLeft} 分钟后再试。`
                 }), {
-                    status: 429, // Too Many Requests
+                    status: 429,
                     headers: { 'Content-Type': 'application/json' },
                 });
             }
@@ -213,42 +211,35 @@ export async function onRequestPost(context) {
 
         const trimmedMessageContent = messageContent.trim();
         const MIN_MESSAGE_LENGTH = 5;
-        const MAX_MESSAGE_LENGTH = 500; // 保持您原有的长度限制
+        const MAX_MESSAGE_LENGTH = 500;
 
         if (trimmedMessageContent.length < MIN_MESSAGE_LENGTH) {
             return new Response(JSON.stringify({ success: false, message: `消息内容过短，至少需要 ${MIN_MESSAGE_LENGTH} 个有效字符。` }), {
                 status: 400, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (messageContent.length > MAX_MESSAGE_LENGTH) { // 检查原始长度，因为 trim 后的可能符合，但原始的过长
+        if (messageContent.length > MAX_MESSAGE_LENGTH) {
             return new Response(JSON.stringify({ success: false, message: `消息内容过长，不能超过 ${MAX_MESSAGE_LENGTH} 个字符。` }), {
                 status: 400, headers: { 'Content-Type': 'application/json' },
             });
         }
 
         let contentToStore = messageContent.replace(/<[^>]*>/g, "").trim();
-        if (contentToStore.length < MIN_MESSAGE_LENGTH) { // 再次检查处理后的内容
+        if (contentToStore.length < MIN_MESSAGE_LENGTH) {
              return new Response(JSON.stringify({ success: false, message: `移除HTML标签后消息内容过短，至少需要 ${MIN_MESSAGE_LENGTH} 个有效字符。` }), {
                 status: 400, headers: { 'Content-Type': 'application/json' },
             });
         }
 
-
         // 4. 敏感词检查 (使用新的爱站网API)
         console.log(`Performing sensitive word check for IP ${ip} with Aizhan API for content (first 50 chars): "${contentToStore.substring(0, 50)}..."`);
         const sensitiveCheckResult = await checkSensitiveWordsAizhan(contentToStore);
 
-        if (sensitiveCheckResult.error && sensitiveCheckResult.critical) {
-            // API 调用本身失败 (网络问题, CSRF/Cookie 获取失败等)
-            console.error(`Critical Aizhan API error for IP ${ip}: ${sensitiveCheckResult.message}`, sensitiveCheckResult.details || sensitiveCheckResult.cause || '');
-            return new Response(JSON.stringify({
-                success: false,
-                message: sensitiveCheckResult.message // 使用从函数返回的更具体的错误消息
-            }), {
-                status: 503, // Service Unavailable, as the dependency failed
-                headers: { 'Content-Type': 'application/json' },
-            });
-        } else if (sensitiveCheckResult.sensitive) {
+        let effectiveContentForEmail = contentToStore;
+        let aizhanApiErrorOccurred = false;
+        const aizhanApiErrorPrefix = "【爱站网敏感词API异常】";
+
+        if (sensitiveCheckResult.sensitive) {
             // 检测到敏感词
             console.log(`Aizhan API detected sensitive words for IP ${ip}: ${sensitiveCheckResult.message}`);
             return new Response(JSON.stringify({
@@ -257,25 +248,37 @@ export async function onRequestPost(context) {
             }), {
                 status: 400, headers: { 'Content-Type': 'application/json' },
             });
+        } else if (sensitiveCheckResult.error && sensitiveCheckResult.critical) {
+            // API 调用本身失败 (网络问题, CSRF/Cookie 获取失败等)
+            // 按要求：API异常时，仍然发送邮件，但在标题和内容前加上前缀
+            console.warn(`Critical Aizhan API error for IP ${ip}: ${sensitiveCheckResult.message}. Proceeding with email sending, prefixing content. Details:`, sensitiveCheckResult.details || sensitiveCheckResult.cause || '');
+            effectiveContentForEmail = `${aizhanApiErrorPrefix}${contentToStore}`;
+            aizhanApiErrorOccurred = true;
+            // 不在此处返回，继续执行邮件发送
+        } else if (sensitiveCheckResult.error) { // Non-critical error
+            console.warn(`Non-critical Aizhan API error for IP ${ip}: ${sensitiveCheckResult.message}. Proceeding as normal. Details:`, sensitiveCheckResult.details || sensitiveCheckResult.cause || '');
+            // 根据需求，非严重错误目前不加前缀，正常发送。如果也需要加前缀，取消下一行的注释并调整逻辑。
+            // effectiveContentForEmail = `${aizhanApiErrorPrefix}[非严重错误] ${contentToStore}`;
+            // aizhanApiErrorOccurred = true; // 或者另一个标志来区分
+        } else {
+            console.log(`Aizhan API check passed for IP ${ip}. No sensitive words detected.`);
         }
-        // 如果 sensitiveCheckResult.error 但 !sensitiveCheckResult.critical (如果未来添加这种逻辑)，可以记录警告并继续
-        console.log(`Aizhan API check passed for IP ${ip}. No sensitive words detected or non-critical error.`);
 
         // 5. 发送邮件并通过第三方 API 及更新 IP 防刷记录
         try {
-            // 首先更新 KV 中的 IP 提交时间戳
             await env.IP_RATE_LIMIT_KV.put(kvKey, Math.floor(Date.now() / 1000).toString(), {
                 expirationTtl: RATE_LIMIT_DURATION_SECONDS
             });
             console.log(`IP ${ip} rate limit marker updated in KV. Expires in ${RATE_LIMIT_DURATION_SECONDS}s.`);
 
-            // 构建短信API请求
             const emailApiEndpoint = `${env.EMAIL_API_URL}?key=${env.EMAIL_API_KEY}`;
             const emailPayload = {
-                email_content: contentToStore
+                // 如果您的邮件API支持标题和内容分离，您可能需要调整这里
+                // 假设 email_content 同时作为标题和内容，或者API会从中提取标题
+                email_content: effectiveContentForEmail // 使用经过处理的内容
             };
 
-            console.log(`Attempting to send email for IP ${ip} via API: ${env.EMAIL_API_URL}`);
+            console.log(`Attempting to send email for IP ${ip} via API: ${env.EMAIL_API_URL}. Prefixed: ${aizhanApiErrorOccurred}`);
             const emailResponse = await fetch(emailApiEndpoint, {
                 method: 'POST',
                 headers: {
@@ -284,16 +287,20 @@ export async function onRequestPost(context) {
                 body: JSON.stringify(emailPayload)
             });
 
+            let successMessage = '消息已成功通过短信发送！';
+            if (aizhanApiErrorOccurred) {
+                successMessage = `${aizhanApiErrorPrefix}消息已发送，但敏感词检查时遇到问题。`;
+            }
+
             if (emailResponse.ok) {
                 let emailResponseData = {};
                 try {
-                    // 尝试解析JSON，但如果API不返回JSON或返回空，则优雅处理
-                     const contentType = emailResponse.headers.get("content-type");
-                     if (contentType && contentType.indexOf("application/json") !== -1) {
+                    const contentType = emailResponse.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
                         emailResponseData = await emailResponse.json();
-                     } else {
+                    } else {
                         emailResponseData = {responseText: await emailResponse.text()};
-                     }
+                    }
                 } catch (e) {
                     console.warn(`Could not parse JSON response from email API for IP ${ip}: ${e.message}. Status: ${emailResponse.status}`);
                     emailResponseData = { responseText: "Response was not valid JSON or was empty."};
@@ -302,34 +309,42 @@ export async function onRequestPost(context) {
                 console.log(`Email successfully sent for IP ${ip}. API Response:`, emailResponseData);
                 return new Response(JSON.stringify({
                     success: true,
-                    message: '消息已成功通过短信发送！',
-                    apiResponse: emailResponseData // 可选：包含部分API响应
+                    message: successMessage, // 使用调整后的成功消息
+                    apiResponse: emailResponseData
                 }), {
-                    status: 200, // 200 OK since the primary action (emailing) was successful
+                    status: 200,
                     headers: { 'Content-Type': 'application/json' },
                 });
             } else {
                 const errorBodyText = await emailResponse.text();
                 console.error(`Email API request failed for IP ${ip}: ${emailResponse.status} ${emailResponse.statusText}. Body: ${errorBodyText}`);
+                // 即使邮件发送失败，如果是因为爱站网API异常导致的前缀，用户可能也想知道
+                let failureMessage = `短信发送失败 (API错误: ${emailResponse.status})。请联系管理员。`;
+                if (aizhanApiErrorOccurred) {
+                     failureMessage = `${aizhanApiErrorPrefix}敏感词检查时遇到问题，且后续短信发送也失败 (API错误: ${emailResponse.status})。请联系管理员。`;
+                }
                 return new Response(JSON.stringify({
                     success: false,
-                    message: `短信发送失败 (API错误: ${emailResponse.status})。请联系管理员。`,
+                    message: failureMessage,
                     details: errorBodyText
                 }), {
-                    status: 502, // Bad Gateway: our server acting as a proxy got an invalid response
+                    status: 502,
                     headers: { 'Content-Type': 'application/json' },
                 });
             }
         } catch (apiError) {
             console.error(`Error during email API call or KV update for IP ${ip}:`, apiError);
-             if (apiError.type === 'บัตรผ่าน' || (apiError.cause && (apiError.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || apiError.cause.code === 'ENOTFOUND'))) {
-                return new Response(JSON.stringify({ success: false, message: `短信服务或内部存储连接超时，请稍后重试。 (${apiError.message})` }), {
-                    status: 504, // Gateway Timeout
-                    headers: { 'Content-Type': 'application/json' },
-                });
+            let errorMessage = '发送短信或更新状态时发生内部错误。';
+            let errorStatus = 500;
+            if (apiError.type === 'บัตรผ่าน' || (apiError.cause && (apiError.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || apiError.cause.code === 'ENOTFOUND'))) {
+                errorMessage = `短信服务或内部存储连接超时，请稍后重试。 (${apiError.message})`;
+                errorStatus = 504;
             }
-            return new Response(JSON.stringify({ success: false, message: '发送短信或更新状态时发生内部错误。' }), {
-                status: 500, headers: { 'Content-Type': 'application/json' },
+            if (aizhanApiErrorOccurred) {
+                 errorMessage = `${aizhanApiErrorPrefix}敏感词检查时遇到问题，且后续处理中发生错误：${errorMessage}`;
+            }
+            return new Response(JSON.stringify({ success: false, message: errorMessage }), {
+                status: errorStatus, headers: { 'Content-Type': 'application/json' },
             });
         }
 
@@ -349,7 +364,6 @@ export async function onRequestPost(context) {
             errorStatus = error.status;
             if(error.message) errorMessage = error.message;
         }
-
 
         return new Response(JSON.stringify({ success: false, message: errorMessage }), {
             status: errorStatus, headers: { 'Content-Type': 'application/json' },
