@@ -14,7 +14,7 @@ const KV_KEY_PREFIX = "ip_submit_marker:"; // KV 键前缀，避免与其他键�
  */
 async function checkSensitiveWordsAizhan(textToCheck) {
     const initialUrl = 'https://tools.aizhan.com/forbidword/';
-    const checkApiUrl = 'https://tools.aizhan.com/forbidword/check8';
+    const checkApiUrl = 'https://tools.aizhan.com/forbidword/check';
     const commonHeaders = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
