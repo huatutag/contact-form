@@ -147,13 +147,13 @@ export async function onRequestPost(context) {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (!env.EMAIL_API_URL) { // 新增: 检查邮件API URL
+        if (!env.EMAIL_API_URL) { // 新增: 检查短信API URL
             console.error("EMAIL_API_URL is not set in environment variables.");
             return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_URL)。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
-        if (!env.EMAIL_API_KEY) { // 新增: 检查邮件API Key
+        if (!env.EMAIL_API_KEY) { // 新增: 检查短信API Key
             console.error("EMAIL_API_KEY is not set in environment variables.");
             return new Response(JSON.stringify({ success: false, message: '服务器配置错误 (E_KEY)。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
@@ -269,7 +269,7 @@ export async function onRequestPost(context) {
             });
             console.log(`IP ${ip} rate limit marker updated in KV. Expires in ${RATE_LIMIT_DURATION_SECONDS}s.`);
 
-            // 构建邮件API请求
+            // 构建短信API请求
             const emailApiEndpoint = `${env.EMAIL_API_URL}?key=${env.EMAIL_API_KEY}`;
             const emailPayload = {
                 email_content: contentToStore
@@ -302,7 +302,7 @@ export async function onRequestPost(context) {
                 console.log(`Email successfully sent for IP ${ip}. API Response:`, emailResponseData);
                 return new Response(JSON.stringify({
                     success: true,
-                    message: '消息已成功通过邮件发送！',
+                    message: '消息已成功通过短信发送！',
                     apiResponse: emailResponseData // 可选：包含部分API响应
                 }), {
                     status: 200, // 200 OK since the primary action (emailing) was successful
@@ -313,7 +313,7 @@ export async function onRequestPost(context) {
                 console.error(`Email API request failed for IP ${ip}: ${emailResponse.status} ${emailResponse.statusText}. Body: ${errorBodyText}`);
                 return new Response(JSON.stringify({
                     success: false,
-                    message: `邮件发送失败 (API错误: ${emailResponse.status})。请联系管理员。`,
+                    message: `短信发送失败 (API错误: ${emailResponse.status})。请联系管理员。`,
                     details: errorBodyText
                 }), {
                     status: 502, // Bad Gateway: our server acting as a proxy got an invalid response
@@ -323,12 +323,12 @@ export async function onRequestPost(context) {
         } catch (apiError) {
             console.error(`Error during email API call or KV update for IP ${ip}:`, apiError);
              if (apiError.type === 'บัตรผ่าน' || (apiError.cause && (apiError.cause.code === 'UND_ERR_CONNECT_TIMEOUT' || apiError.cause.code === 'ENOTFOUND'))) {
-                return new Response(JSON.stringify({ success: false, message: `邮件服务或内部存储连接超时，请稍后重试。 (${apiError.message})` }), {
+                return new Response(JSON.stringify({ success: false, message: `短信服务或内部存储连接超时，请稍后重试。 (${apiError.message})` }), {
                     status: 504, // Gateway Timeout
                     headers: { 'Content-Type': 'application/json' },
                 });
             }
-            return new Response(JSON.stringify({ success: false, message: '发送邮件或更新状态时发生内部错误。' }), {
+            return new Response(JSON.stringify({ success: false, message: '发送短信或更新状态时发生内部错误。' }), {
                 status: 500, headers: { 'Content-Type': 'application/json' },
             });
         }
