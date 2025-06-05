@@ -310,7 +310,6 @@ export async function onRequestPost(context) {
                 return new Response(JSON.stringify({
                     success: true,
                     message: successMessage, // 使用调整后的成功消息
-                    apiResponse: emailResponseData
                 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' },
@@ -323,10 +322,10 @@ export async function onRequestPost(context) {
                 if (aizhanApiErrorOccurred) {
                      failureMessage = `${aizhanApiErrorPrefix}敏感词检查时遇到问题，且后续短信发送也失败 (API错误: ${emailResponse.status})。请联系管理员。`;
                 }
+                console.error(`Email error sent for IP ${ip}. API Response:`, errorBodyText);
                 return new Response(JSON.stringify({
                     success: false,
                     message: failureMessage,
-                    details: errorBodyText
                 }), {
                     status: 502,
                     headers: { 'Content-Type': 'application/json' },
